@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AlphaLens AI — Equity Scanner</title>
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+<!-- React 18 via CDN -->
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<!-- Babel standalone for JSX -->
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<style>
+/* ================================================================
+   GLOBAL TOKENS
+   ================================================================ */
+:root {
+  --bg:        #080c12;
+  --bg-card:   #0e1420;
+  --bg-panel:  #111827;
+  --accent:    #00e5a0;
+  --accent-dim:#00e5a033;
+  --text:      #e2e8f0;
+  --text-dim:  #94a3b8;
+  --red:       #f87171;
+  --yellow:    #facc15;
+  --blue:      #60a5fa;
+  --orange:    #fb923c;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-head: 'Syne', sans-serif;
+  --radius:    12px;
+  --transition: 0.25s cubic-bezier(.4,0,.2,1);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%; width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  overflow-x: hidden;
+}
+
+/* ================================================================
+   SCROLLBAR
+   ================================================================ */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+
+/* ================================================================
+   LAYOUT
+   ================================================================ */
+.app { display: flex; flex-direction: column; height: 100vh; }
+
+/* --- Top nav --- */
+.topnav {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 24px; height: 56px;
+  background: var(--bg-panel); border-bottom: 1px solid #1e293b;
+  flex-shrink: 0; z-index: 100;
+}
+.topnav .brand {
+  font-family: var(--font-head); font-weight: 800; font-size: 20px;
+  color: var(--accent); letter-spacing: -0.5px;
+}
+.topnav .brand span { color: var(--text); font-weight: 500; }
+.topnav .actions { display: flex; gap: 12px; align-items: center; }
+
+/* --- Body wrapper --- */
+.body-wrap { display: flex; flex: 1; overflow: hidden; }
+
+/* --- Sidebar --- */
+.sidebar {
+  width: 220px; flex-shrink: 0;
+  background: var(--bg-panel); border-right: 1px solid #1e293b;
+  padding: 16px 0; display: flex; flex-direction: column; gap: 4px;
+}
+.sidebar a {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 20px; color: var(--text-dim);
+  text-decoration: none; font-size: 13px; font-weight: 500;
+  border-left: 3px solid transparent; transition: var(--transition);
+  cursor: pointer;
+}
+.sidebar a:hover, .sidebar a.active {
+  color: var(--accent); background: var(--accent-dim);
+  border-left-color: var(--accent);
+}
+.sidebar .divider { height: 1px; background: #1e293b; margin: 12px 16px; }
+
+/* --- Main content --- */
+.main {
+  flex: 1; overflow-y: auto; padding: 28px 32px;
+}
+
+/* ================================================================
+   BUTTONS
+   ================================================================ */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border-radius: 8px;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+  cursor: pointer; border: none; transition: var(--transition);
+}
+.btn-accent {
+  background: var(--accent); color: #080c12;
+}
+.btn-accent:hover { filter: brightness(1.15); }
+.btn-outline {
+  background: transparent; color: var(--accent);
+  border: 1px solid var(--accent);
+}
+.btn-outline:hover { background: var(--accent-dim); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ================================================================
+   STATUS BADGE
+   ================================================================ */
+.badge {
+  display: inline-block; padding: 3px 10px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.badge-strong-buy { background: #065f46; color: #34d399; }
+.badge-buy        { background: #14532d; color: #86efac; }
+.badge-neutral    { background: #422006; color: var(--yellow); }
+.badge-caution    { background: #431407; color: var(--orange); }
+.badge-risk       { background: #450a0a; color: var(--red); }
+
+/* ================================================================
+   LANE (horizontal scrolling row)
+   ================================================================ */
+.lane { margin-bottom: 32px; }
+.lane-title {
+  font-family: var(--font-head); font-size: 18px; font-weight: 700;
+  margin-bottom: 14px; color: var(--text);
+}
+.lane-row {
+  display: flex; gap: 16px; overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+/* ================================================================
+   STOCK CARD
+   ================================================================ */
+.stock-card {
+  flex: 0 0 280px; background: var(--bg-card);
+  border: 1px solid #1e293b; border-radius: var(--radius);
+  padding: 18px; cursor: pointer;
+  transition: var(--transition);
+  position: relative; overflow: hidden;
+}
+.stock-card:hover {
+  border-color: var(--accent); transform: translateY(-3px);
+  box-shadow: 0 8px 30px #00e5a015;
+}
+.stock-card .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+.stock-card .ticker { font-family: var(--font-head); font-size: 22px; font-weight: 800; color: var(--accent); }
+.stock-card .name { font-size: 11px; color: var(--text-dim); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+.stock-card .score-circle {
+  width: 48px; height: 48px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 16px;
+  border: 2px solid var(--accent); color: var(--accent);
+  flex-shrink: 0;
+}
+.stock-card .metrics-row { display: flex; gap: 12px; margin: 10px 0; font-size: 11px; }
+.stock-card .metric-item { display: flex; flex-direction: column; gap: 2px; }
+.stock-card .metric-label { color: var(--text-dim); font-size: 10px; text-transform: uppercase; }
+.stock-card .metric-val { font-weight: 600; }
+.stock-card .sparkline-wrap { height: 40px; margin: 10px 0 8px; }
+.stock-card .summary { font-size: 11px; color: var(--text-dim); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ================================================================
+   DETAIL PANEL (slide-in)
+   ================================================================ */
+.detail-overlay {
+  position: fixed; inset: 0; background: #00000088; z-index: 200;
+  opacity: 0; pointer-events: none; transition: opacity 0.3s;
+}
+.detail-overlay.open { opacity: 1; pointer-events: auto; }
+
+.detail-panel {
+  position: fixed; top: 0; right: -520px; bottom: 0; width: 520px;
+  background: var(--bg-panel); border-left: 1px solid #1e293b;
+  z-index: 201; transition: right 0.35s cubic-bezier(.4,0,.2,1);
+  overflow-y: auto; padding: 28px;
+}
+.detail-panel.open { right: 0; }
+
+.detail-panel .close-btn {
+  position: absolute; top: 16px; right: 16px;
+  background: none; border: none; color: var(--text-dim);
+  font-size: 24px; cursor: pointer;
+}
+.detail-panel .close-btn:hover { color: var(--accent); }
+
+.detail-panel h2 {
+  font-family: var(--font-head); font-size: 28px; font-weight: 800;
+  color: var(--accent); margin-bottom: 4px;
+}
+.detail-panel .subtitle { color: var(--text-dim); font-size: 13px; margin-bottom: 20px; }
+
+.dim-bar-wrap { margin-bottom: 10px; }
+.dim-bar-label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+.dim-bar-track { height: 8px; background: #1e293b; border-radius: 4px; overflow: hidden; }
+.dim-bar-fill { height: 100%; border-radius: 4px; background: var(--accent); transition: width 0.5s; }
+
+.forecast-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin: 16px 0; }
+.forecast-card {
+  background: var(--bg-card); border-radius: 10px; padding: 14px; text-align: center;
+  border: 1px solid #1e293b;
+}
+.forecast-card .label { font-size: 10px; text-transform: uppercase; color: var(--text-dim); margin-bottom: 4px; }
+.forecast-card .value { font-size: 20px; font-weight: 700; }
+
+.detail-summary {
+  background: var(--bg-card); border-radius: 10px; padding: 16px;
+  font-size: 13px; line-height: 1.7; color: var(--text-dim);
+  border: 1px solid #1e293b; margin-top: 16px;
+}
+
+/* ================================================================
+   SCAN CONTROL BAR
+   ================================================================ */
+.scan-bar {
+  display: flex; align-items: center; gap: 16px; margin-bottom: 28px;
+  padding: 16px 20px; background: var(--bg-card);
+  border: 1px solid #1e293b; border-radius: var(--radius);
+}
+.scan-bar .status-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  flex-shrink: 0;
+}
+.scan-bar .status-dot.idle { background: var(--text-dim); }
+.scan-bar .status-dot.running { background: var(--accent); animation: pulse 1.2s infinite; }
+.scan-bar .status-dot.done { background: var(--accent); }
+
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+
+/* ================================================================
+   EMPTY STATE
+   ================================================================ */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 60px 20px; color: var(--text-dim);
+  text-align: center;
+}
+.empty-state .icon { font-size: 48px; margin-bottom: 16px; opacity: .4; }
+.empty-state p { max-width: 380px; line-height: 1.7; font-size: 13px; }
+
+/* ================================================================
+   LOADING SKELETON
+   ================================================================ */
+.skeleton {
+  background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 6px;
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+/* ================================================================
+   AlphaLens AI — React Dashboard
+   Self-contained, no build step required.
+   ================================================================ */
+
+const { useState, useEffect, useCallback, useRef } = React;
+
+const API = "http://localhost:8000";
+
+/* ----------------------------------------------------------------
+   MOCK DATA — used when the API is unreachable so the UI stays
+   functional during development or offline demos.
+   ---------------------------------------------------------------- */
+const MOCK_STOCKS = [
+  { ticker:"AAPL", company_name:"Apple Inc.", composite:82.3, rating:"STRONG BUY", confidence:91, risk:28,
+    dimensions:{growth:78,profitability:88,balance_sheet:72,fcf:85,momentum:70,market_signals:65},
+    forecast:{base_return_pct:19.4,bull_return_pct:40.7,bear_return_pct:-9.7},
+    summary:"AAPL is delivering strong revenue growth at ~12% annualized. Margins are healthy with strong operating efficiency. Free cash flow generation is robust and consistent. Insider activity is unremarkable. Options flow tilts bullish. Overall rating: STRONG BUY (82/100).",
+    revenue_series:[{end:"2023-Q1",val:94836000000},{end:"2023-Q2",val:81797000000},{end:"2023-Q3",val:85896000000},{end:"2023-Q4",val:119575000000},{end:"2024-Q1",val:95265000000},{end:"2024-Q2",val:85777000000},{end:"2024-Q3",val:94930000000},{end:"2024-Q4",val:124300000000}],
+    momentum:"bullish", insider_activity:"neutral", options_sentiment:"bullish", quarters_available:16 },
+  { ticker:"MSFT", company_name:"Microsoft Corp.", composite:79.1, rating:"STRONG BUY", confidence:93, risk:26,
+    dimensions:{growth:74,profitability:91,balance_sheet:68,fcf:82,momentum:72,market_signals:68},
+    forecast:{base_return_pct:17.5,bull_return_pct:36.7,bear_return_pct:-8.7},
+    summary:"MSFT shows moderate revenue growth (~14% CAGR). Margins are healthy with strong operating efficiency. Free cash flow generation is robust and consistent. Insider buying signals management confidence. Overall rating: STRONG BUY (79/100).",
+    revenue_series:[{end:"2023-Q1",val:52857000000},{end:"2023-Q2",val:56189000000},{end:"2023-Q3",val:56517000000},{end:"2023-Q4",val:62020000000},{end:"2024-Q1",val:61858000000},{end:"2024-Q2",val:64727000000},{end:"2024-Q3",val:65585000000},{end:"2024-Q4",val:69632000000}],
+    momentum:"bullish", insider_activity:"net_buying", options_sentiment:"bullish", quarters_available:18 },
+  { ticker:"NVDA", company_name:"NVIDIA Corp.", composite:85.6, rating:"STRONG BUY", confidence:88, risk:22,
+    dimensions:{growth:95,profitability:92,balance_sheet:65,fcf:78,momentum:82,market_signals:75},
+    forecast:{base_return_pct:21.4,bull_return_pct:44.9,bear_return_pct:-10.7},
+    summary:"NVDA is delivering strong revenue growth at ~120% annualized. Margins are healthy with strong operating efficiency. Free cash flow generation is robust and consistent. Insider activity is unremarkable. Options flow tilts bullish. Overall rating: STRONG BUY (86/100).",
+    revenue_series:[{end:"2023-Q1",val:7192000000},{end:"2023-Q2",val:13507000000},{end:"2023-Q3",val:18120000000},{end:"2023-Q4",val:22103000000},{end:"2024-Q1",val:26044000000},{end:"2024-Q2",val:30040000000},{end:"2024-Q3",val:35082000000},{end:"2024-Q4",val:39331000000}],
+    momentum:"bullish", insider_activity:"neutral", options_sentiment:"bullish", quarters_available:14 },
+  { ticker:"META", company_name:"Meta Platforms Inc.", composite:76.4, rating:"BUY", confidence:89, risk:30,
+    dimensions:{growth:72,profitability:82,balance_sheet:70,fcf:74,momentum:68,market_signals:62},
+    forecast:{base_return_pct:15.8,bull_return_pct:33.2,bear_return_pct:-7.9},
+    summary:"META shows moderate revenue growth (~22% CAGR). Margins are healthy with strong operating efficiency. Free cash flow is adequate but could improve. Insider activity is unremarkable. Overall rating: BUY (76/100).",
+    revenue_series:[{end:"2023-Q1",val:28645000000},{end:"2023-Q2",val:31999000000},{end:"2023-Q3",val:34146000000},{end:"2023-Q4",val:40111000000},{end:"2024-Q1",val:36455000000},{end:"2024-Q2",val:39071000000},{end:"2024-Q3",val:40589000000},{end:"2024-Q4",val:48385000000}],
+    momentum:"neutral", insider_activity:"neutral", options_sentiment:"neutral", quarters_available:15 },
+  { ticker:"GOOGL", company_name:"Alphabet Inc.", composite:73.2, rating:"BUY", confidence:90, risk:31,
+    dimensions:{growth:68,profitability:80,balance_sheet:75,fcf:72,momentum:60,market_signals:58},
+    forecast:{base_return_pct:13.9,bull_return_pct:29.2,bear_return_pct:-7.0},
+    summary:"GOOGL shows moderate revenue growth (~13% CAGR). Margins are at an acceptable level. Free cash flow is adequate but could improve. Insider activity is unremarkable. Overall rating: BUY (73/100).",
+    revenue_series:[{end:"2023-Q1",val:69787000000},{end:"2023-Q2",val:74604000000},{end:"2023-Q3",val:76693000000},{end:"2023-Q4",val:86310000000},{end:"2024-Q1",val:80539000000},{end:"2024-Q2",val:84742000000},{end:"2024-Q3",val:88268000000},{end:"2024-Q4",val:96469000000}],
+    momentum:"neutral", insider_activity:"neutral", options_sentiment:"neutral", quarters_available:17 },
+  { ticker:"AMZN", company_name:"Amazon.com Inc.", composite:71.0, rating:"BUY", confidence:87, risk:33,
+    dimensions:{growth:70,profitability:62,balance_sheet:55,fcf:76,momentum:66,market_signals:60},
+    forecast:{base_return_pct:12.6,bull_return_pct:26.5,bear_return_pct:-6.3},
+    summary:"AMZN shows moderate revenue growth (~12% CAGR). Margins are at an acceptable level. Free cash flow generation is robust and consistent. Insider activity is unremarkable. Overall rating: BUY (71/100).",
+    revenue_series:[{end:"2023-Q1",val:127358000000},{end:"2023-Q2",val:134383000000},{end:"2023-Q3",val:143083000000},{end:"2023-Q4",val:170000000000},{end:"2024-Q1",val:143313000000},{end:"2024-Q2",val:148000000000},{end:"2024-Q3",val:158877000000},{end:"2024-Q4",val:187792000000}],
+    momentum:"neutral", insider_activity:"neutral", options_sentiment:"neutral", quarters_available:16 },
+  { ticker:"JPM", company_name:"JPMorgan Chase & Co.", composite:65.8, rating:"BUY", confidence:82, risk:38,
+    dimensions:{growth:55,profitability:72,balance_sheet:60,fcf:68,momentum:58,market_signals:55},
+    forecast:{base_return_pct:9.5,bull_return_pct:19.9,bear_return_pct:-4.7},
+    summary:"JPM has slow but positive revenue growth (5% CAGR). Margins are healthy with strong operating efficiency. Free cash flow is adequate but could improve. Insider activity is unremarkable. Overall rating: BUY (66/100).",
+    revenue_series:[{end:"2023-Q1",val:38349000000},{end:"2023-Q2",val:41307000000},{end:"2023-Q3",val:39874000000},{end:"2023-Q4",val:38574000000},{end:"2024-Q1",val:41934000000},{end:"2024-Q2",val:43124000000},{end:"2024-Q3",val:42654000000},{end:"2024-Q4",val:43743000000}],
+    momentum:"neutral", insider_activity:"neutral", options_sentiment:"neutral", quarters_available:14 },
+  { ticker:"V", company_name:"Visa Inc.", composite:74.5, rating:"BUY", confidence:91, risk:29,
+    dimensions:{growth:66,profitability:94,balance_sheet:62,fcf:80,momentum:64,market_signals:60},
+    forecast:{base_return_pct:14.7,bull_return_pct:30.9,bear_return_pct:-7.4},
+    summary:"V shows moderate revenue growth (~10% CAGR). Margins are healthy with strong operating efficiency. Free cash flow generation is robust and consistent. Insider activity is unremarkable. Overall rating: BUY (75/100).",
+    revenue_series:[{end:"2023-Q1",val:7934000000},{end:"2023-Q2",val:8121000000},{end:"2023-Q3",val:8609000000},{end:"2023-Q4",val:8631000000},{end:"2024-Q1",val:8775000000},{end:"2024-Q2",val:8903000000},{end:"2024-Q3",val:9617000000},{end:"2024-Q4",val:9504000000}],
+    momentum:"neutral", insider_activity:"neutral", options_sentiment:"neutral", quarters_available:16 },
+];
+
+function buildMockLanes(stocks) {
+  const byComposite = [...stocks].sort((a,b) => b.composite - a.composite);
+  const byGrowth = [...stocks].sort((a,b) => (b.dimensions?.growth||0) - (a.dimensions?.growth||0));
+  const bySqueeze = [...stocks].sort((a,b) =>
+    ((b.dimensions?.momentum||0)+(b.dimensions?.market_signals||0)-b.composite*0.3)
+    -((a.dimensions?.momentum||0)+(a.dimensions?.market_signals||0)-a.composite*0.3));
+  const byValue = [...stocks].sort((a,b) =>
+    ((b.dimensions?.fcf||0)+(b.dimensions?.balance_sheet||0))
+    -((a.dimensions?.fcf||0)+(a.dimensions?.balance_sheet||0)));
+  return {
+    lanes: [
+      { title: "Top AI Rated",            stocks: byComposite.slice(0,8) },
+      { title: "High Growth",             stocks: byGrowth.slice(0,8) },
+      { title: "Short Squeeze Candidates", stocks: bySqueeze.slice(0,8) },
+      { title: "Undervalued Fundamentals", stocks: byValue.slice(0,8) },
+    ],
+    total: stocks.length,
+  };
+}
+
+/* ----------------------------------------------------------------
+   SPARKLINE — lightweight SVG mini-chart
+   ---------------------------------------------------------------- */
+function Sparkline({ data, width = 220, height = 36, color = "#00e5a0" }) {
+  if (!data || data.length < 2) return <div style={{height, opacity:.2, fontSize:11}}>No data</div>;
+  const vals = data.map(d => d.val);
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const range = max - min || 1;
+  const step = width / (vals.length - 1);
+  const points = vals.map((v, i) => `${i * step},${height - ((v - min) / range) * (height - 4) - 2}`).join(" ");
+  const areaPoints = points + ` ${width},${height} 0,${height}`;
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{display:"block"}}>
+      <defs>
+        <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.25"/>
+          <stop offset="100%" stopColor={color} stopOpacity="0"/>
+        </linearGradient>
+      </defs>
+      <polygon points={areaPoints} fill="url(#sparkFill)" />
+      <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/* ----------------------------------------------------------------
+   BADGE COMPONENT
+   ---------------------------------------------------------------- */
+function RatingBadge({ rating }) {
+  const cls = {
+    "STRONG BUY": "badge-strong-buy",
+    "BUY":        "badge-buy",
+    "NEUTRAL":    "badge-neutral",
+    "CAUTION":    "badge-caution",
+    "RISK":       "badge-risk",
+  }[rating] || "badge-neutral";
+  return <span className={`badge ${cls}`}>{rating}</span>;
+}
+
+/* ----------------------------------------------------------------
+   STOCK CARD
+   ---------------------------------------------------------------- */
+function StockCard({ stock, onClick }) {
+  const forecast = stock.forecast || {};
+  return (
+    <div className="stock-card" onClick={() => onClick(stock)}>
+      <div className="card-header">
+        <div>
+          <div className="ticker">{stock.ticker}</div>
+          <div className="name">{stock.company_name}</div>
+        </div>
+        <div className="score-circle">{Math.round(stock.composite)}</div>
+      </div>
+      <RatingBadge rating={stock.rating} />
+      <div className="metrics-row">
+        <div className="metric-item">
+          <span className="metric-label">Confidence</span>
+          <span className="metric-val">{stock.confidence}%</span>
+        </div>
+        <div className="metric-item">
+          <span className="metric-label">12m Base</span>
+          <span className="metric-val" style={{color: (forecast.base_return_pct||0) >= 0 ? "#34d399" : "#f87171"}}>
+            {(forecast.base_return_pct||0) >= 0 ? "+" : ""}{(forecast.base_return_pct||0).toFixed(1)}%
+          </span>
+        </div>
+        <div className="metric-item">
+          <span className="metric-label">Risk</span>
+          <span className="metric-val">{stock.risk}</span>
+        </div>
+      </div>
+      <div className="sparkline-wrap">
+        <Sparkline data={stock.revenue_series} />
+      </div>
+      <div className="summary">{stock.summary}</div>
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------------
+   DETAIL PANEL
+   ---------------------------------------------------------------- */
+function DetailPanel({ stock, onClose }) {
+  if (!stock) return null;
+  const dims = stock.dimensions || {};
+  const dimLabels = {
+    growth: "Growth Quality", profitability: "Profitability",
+    balance_sheet: "Balance Sheet", fcf: "FCF Quality",
+    momentum: "Momentum", market_signals: "Market Signals",
+  };
+  const forecast = stock.forecast || {};
+
+  return (
+    <>
+      <div className={`detail-overlay ${stock ? "open" : ""}`} onClick={onClose} />
+      <div className={`detail-panel ${stock ? "open" : ""}`}>
+        <button className="close-btn" onClick={onClose}>&times;</button>
+        <h2>{stock.ticker}</h2>
+        <div className="subtitle">{stock.company_name}</div>
+
+        <div style={{display:"flex",gap:12,marginBottom:20,alignItems:"center"}}>
+          <RatingBadge rating={stock.rating} />
+          <span style={{fontSize:28,fontWeight:800,color:"var(--accent)"}}>{stock.composite}</span>
+          <span style={{color:"var(--text-dim)",fontSize:12}}>/100</span>
+        </div>
+
+        <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>Dimension Scores</div>
+        {Object.entries(dimLabels).map(([key, label]) => (
+          <div className="dim-bar-wrap" key={key}>
+            <div className="dim-bar-label">
+              <span>{label}</span>
+              <span style={{color:"var(--accent)"}}>{dims[key] || 0}</span>
+            </div>
+            <div className="dim-bar-track">
+              <div className="dim-bar-fill" style={{width: `${dims[key] || 0}%`}} />
+            </div>
+          </div>
+        ))}
+
+        <div style={{fontWeight:600,marginTop:20,marginBottom:8,fontSize:13}}>12-Month Forecast</div>
+        <div className="forecast-grid">
+          <div className="forecast-card">
+            <div className="label">Bear</div>
+            <div className="value" style={{color:"var(--red)"}}>{(forecast.bear_return_pct||0).toFixed(1)}%</div>
+          </div>
+          <div className="forecast-card">
+            <div className="label">Base</div>
+            <div className="value" style={{color:"var(--accent)"}}>{(forecast.base_return_pct||0) >= 0 ? "+" : ""}{(forecast.base_return_pct||0).toFixed(1)}%</div>
+          </div>
+          <div className="forecast-card">
+            <div className="label">Bull</div>
+            <div className="value" style={{color:"var(--blue)"}}>+{(forecast.bull_return_pct||0).toFixed(1)}%</div>
+          </div>
+        </div>
+
+        <div style={{display:"flex",gap:16,marginTop:12,fontSize:12}}>
+          <div><span style={{color:"var(--text-dim)"}}>Confidence</span> <strong>{stock.confidence}%</strong></div>
+          <div><span style={{color:"var(--text-dim)"}}>Risk</span> <strong>{stock.risk}</strong></div>
+          <div><span style={{color:"var(--text-dim)"}}>Momentum</span> <strong style={{textTransform:"capitalize"}}>{stock.momentum}</strong></div>
+        </div>
+
+        <div style={{fontWeight:600,marginTop:20,marginBottom:8,fontSize:13}}>Revenue Trend</div>
+        <Sparkline data={stock.revenue_series} width={460} height={60} />
+
+        <div className="detail-summary">
+          <div style={{fontWeight:600,marginBottom:6,color:"var(--text)",fontSize:13}}>AI Analysis</div>
+          {stock.summary}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ----------------------------------------------------------------
+   LANE
+   ---------------------------------------------------------------- */
+function Lane({ title, stocks, onCardClick }) {
+  return (
+    <div className="lane">
+      <div className="lane-title">{title}</div>
+      <div className="lane-row">
+        {stocks.map(s => <StockCard key={s.ticker + title} stock={s} onClick={onCardClick} />)}
+      </div>
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------------
+   SKELETON CARD (loading state)
+   ---------------------------------------------------------------- */
+function SkeletonCard() {
+  return (
+    <div className="stock-card" style={{cursor:"default"}}>
+      <div className="card-header">
+        <div>
+          <div className="skeleton" style={{width:60,height:22,marginBottom:6}} />
+          <div className="skeleton" style={{width:120,height:12}} />
+        </div>
+        <div className="skeleton" style={{width:48,height:48,borderRadius:"50%"}} />
+      </div>
+      <div className="skeleton" style={{width:80,height:20,marginTop:8,borderRadius:999}} />
+      <div className="skeleton" style={{width:"100%",height:36,marginTop:14}} />
+      <div className="skeleton" style={{width:"100%",height:40,marginTop:10}} />
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------------
+   APP
+   ---------------------------------------------------------------- */
+function App() {
+  const [lanes, setLanes] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [scanning, setScanning] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [apiOnline, setApiOnline] = useState(false);
+  const [activePage, setActivePage] = useState("scanner");
+  const pollRef = useRef(null);
+
+  /* Fetch results (try API, fall back to mocks) */
+  const fetchResults = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/scan/results/top`);
+      if (!res.ok) throw new Error("api error");
+      const data = await res.json();
+      if (data.lanes && data.lanes.length > 0 && data.lanes.some(l => l.stocks.length > 0)) {
+        setLanes(data.lanes);
+        setTotal(data.total);
+        setApiOnline(true);
+        setLoading(false);
+        return;
+      }
+    } catch {}
+    // Fallback to mocks
+    const mock = buildMockLanes(MOCK_STOCKS);
+    setLanes(mock.lanes);
+    setTotal(mock.total);
+    setApiOnline(false);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchResults(); }, [fetchResults]);
+
+  /* Start scan */
+  const startScan = async () => {
+    setScanning(true);
+    try {
+      await fetch(`${API}/scan/start`, { method: "POST" });
+      // Poll status
+      pollRef.current = setInterval(async () => {
+        try {
+          const res = await fetch(`${API}/scan/status`);
+          const st = await res.json();
+          if (!st.running && st.finished_at) {
+            clearInterval(pollRef.current);
+            setScanning(false);
+            fetchResults();
+          }
+        } catch {}
+      }, 3000);
+    } catch {
+      setScanning(false);
+    }
+  };
+
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
+  return (
+    <div className="app">
+      {/* TOP NAV */}
+      <header className="topnav">
+        <div className="brand">AlphaLens<span> AI</span></div>
+        <div className="actions">
+          <span style={{fontSize:11,color: apiOnline ? "#34d399" : "#f87171"}}>
+            {apiOnline ? "API Connected" : "Offline Mode (Mock Data)"}
+          </span>
+          <button className="btn btn-accent" onClick={startScan} disabled={scanning || !apiOnline}>
+            {scanning ? "Scanning…" : "Run Scan"}
+          </button>
+        </div>
+      </header>
+
+      <div className="body-wrap">
+        {/* SIDEBAR */}
+        <nav className="sidebar">
+          <a className={activePage === "scanner" ? "active" : ""} onClick={() => setActivePage("scanner")}>
+            &#9670;&ensp;Scanner
+          </a>
+          <a className={activePage === "watchlist" ? "active" : ""} onClick={() => setActivePage("watchlist")}>
+            &#9733;&ensp;Watchlist
+          </a>
+          <a className={activePage === "screener" ? "active" : ""} onClick={() => setActivePage("screener")}>
+            &#9881;&ensp;Screener
+          </a>
+          <div className="divider" />
+          <a className={activePage === "settings" ? "active" : ""} onClick={() => setActivePage("settings")}>
+            &#9881;&ensp;Settings
+          </a>
+        </nav>
+
+        {/* MAIN CONTENT */}
+        <main className="main">
+          {/* Scan control bar */}
+          <div className="scan-bar">
+            <div className={`status-dot ${scanning ? "running" : total > 0 ? "done" : "idle"}`} />
+            <div style={{flex:1}}>
+              <div style={{fontWeight:600,fontSize:13}}>
+                {scanning ? "Scan in progress…" : total > 0 ? `${total} stocks analyzed` : "Ready to scan"}
+              </div>
+              <div style={{fontSize:11,color:"var(--text-dim)",marginTop:2}}>
+                {!apiOnline && "Running in offline mode with demo data."}
+                {apiOnline && !scanning && total > 0 && "Click Run Scan to refresh with live EDGAR + Polygon data."}
+                {apiOnline && !scanning && total === 0 && "Click Run Scan to begin analysis."}
+                {scanning && "Fetching SEC filings and market data…"}
+              </div>
+            </div>
+          </div>
+
+          {/* Lanes */}
+          {loading ? (
+            <div>
+              {[1,2].map(i => (
+                <div className="lane" key={i}>
+                  <div className="skeleton" style={{width:180,height:20,marginBottom:14}} />
+                  <div className="lane-row">{[1,2,3,4].map(j => <SkeletonCard key={j} />)}</div>
+                </div>
+              ))}
+            </div>
+          ) : lanes.length > 0 ? (
+            lanes.map(lane => (
+              <Lane key={lane.title} title={lane.title} stocks={lane.stocks} onCardClick={setSelected} />
+            ))
+          ) : (
+            <div className="empty-state">
+              <div className="icon">&#128200;</div>
+              <p>No scan results yet. Hit <strong>Run Scan</strong> to analyze the stock universe using SEC EDGAR fundamentals and Polygon.io market data.</p>
+            </div>
+          )}
+        </main>
+      </div>
+
+      {/* Detail slide-in */}
+      <DetailPanel stock={selected} onClose={() => setSelected(null)} />
+    </div>
+  );
+}
+
+/* Mount */
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
