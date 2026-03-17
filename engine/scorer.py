@@ -297,19 +297,47 @@ def _compute_confidence(metrics: dict, market: dict) -> float:
 #  Forecast model
 # ═══════════════════════════════════════════════════════════════════════════
 
-def _compute_forecast(composite: float, metrics: dict) -> dict[str, float]:
+def _compute_forecast(composite: float, metrics: dict, market: dict | None = None) -> dict[str, float]:
     rev = _last_n(metrics.get("revenue", []))
     rev_cagr = _cagr(rev)
 
-    # Scale: a composite of 75 with 10% rev CAGR → ~18% base return
-    base_return = (composite - 50) * 0.006 + rev_cagr * 0.3
-    bull_return = base_return * 2.1
-    bear_return = base_return * -0.5
+    # Score component: composite 50 = 0%, composite 100 = +20%
+    score_component = (composite - 50) * 0.004
+
+    # Revenue component: diminishing returns via log so hypergrowth
+    # stocks (NVDA at 150% CAGR) don't generate absurd forecasts.
+    # Positive growth: log-scaled, capped at 0.5 before log.
+    # Negative growth: small linear penalty.
+    if rev_cagr > 0:
+        rev_component = math.log(1.0 + min(rev_cagr, 0.50)) * 0.30
+    else:
+        rev_component = rev_cagr * 0.15
+
+    base_return = score_component + rev_component
+
+    # Valuation discount: high price-to-sales stocks are already pricing
+    # in a lot of the good news, so we haircut the forecast.
+    if market:
+        market_cap = market.get("market_cap") or 0
+        annual_rev = rev[-1] * 4 if rev else 0
+        if market_cap > 0 and annual_rev > 0:
+            ps_ratio = market_cap / annual_rev
+            if ps_ratio > 15:
+                # For every 10x of P/S above 15, shave ~3% off the base return
+                valuation_discount = min((ps_ratio - 15) / 10.0 * 0.03, 0.12)
+                base_return -= valuation_discount
+
+    # Hard cap: realistic 12-month range
+    base_return = max(-0.30, min(0.40, base_return))
+
+    # Bull adds ~20 percentage points; bear subtracts ~25 percentage points
+    bull_return = min(base_return + 0.20, 0.55)
+    bear_return = max(base_return - 0.25, -0.40)
 
     return {
-        "base_return_pct": round(base_return * 100, 2),
-        "bull_return_pct": round(bull_return * 100, 2),
-        "bear_return_pct": round(bear_return * 100, 2),
+        "base_return_pct": round(base_return * 100, 1),
+        "bull_return_pct": round(bull_return * 100, 1),
+        "bear_return_pct": round(bear_return * 100, 1),
     }
 
 
@@ -581,7 +609,7 @@ def score_stock(
     confidence = round(_compute_confidence(metrics, market_data), 1)
 
     # --- Forecast ---
-    forecast = _compute_forecast(composite, metrics)
+    forecast = _compute_forecast(composite, metrics, market_data)
 
     # --- Risk ---
     risk = round(_compute_risk(composite, metrics), 1)

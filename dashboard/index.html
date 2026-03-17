@@ -583,6 +583,26 @@ function DetailPanel({ stock, onClose }) {
           <div><span style={{color:"var(--text-dim)"}}>Momentum</span> <strong style={{textTransform:"capitalize"}}>{stock.momentum}</strong></div>
         </div>
 
+        <div style={{background:"var(--bg-card)",borderRadius:10,padding:14,border:"1px solid #1e293b",marginTop:12,fontSize:12,lineHeight:1.8,color:"var(--text-dim)"}}>
+          <div style={{fontWeight:600,color:"var(--text)",marginBottom:8,fontSize:12}}>What does this forecast mean?</div>
+          <div style={{marginBottom:8}}>
+            Think of these three numbers as three different stories about what could happen to the stock over the next 12 months — a good story, a bad story, and the most likely story.
+          </div>
+          <div style={{marginBottom:6}}>
+            <span style={{color:"var(--accent)",fontWeight:600}}>Base</span> — the most realistic outcome based on the company's current fundamentals. If the business keeps performing roughly as it has been and the market stays rational, this is the ballpark return you'd expect.
+          </div>
+          <div style={{marginBottom:6}}>
+            <span style={{color:"var(--blue)",fontWeight:600}}>Bull</span> — the optimistic scenario. Everything breaks in the company's favor: earnings beat expectations, the sector gets hot, and buyers pile in. This adds roughly 20 percentage points on top of the base.
+          </div>
+          <div style={{marginBottom:10}}>
+            <span style={{color:"var(--red)",fontWeight:600}}>Bear</span> — the pessimistic scenario. Something goes wrong — a missed earnings report, a macro slowdown, a competitor surprise. This subtracts roughly 25 percentage points from the base.
+          </div>
+          <div style={{borderTop:"1px solid #1e293b",paddingTop:10,color:"var(--text-dim)"}}>
+            <span style={{color:"var(--yellow)",fontWeight:600}}>Important: </span>
+            This is a model estimate based on revenue growth and composite score — not a guarantee or a Wall Street price target. It does not know what the stock is currently trading at or whether the price already reflects good news. A company can have great fundamentals and still be overpriced. Always combine this with your own research before making any investment decision.
+          </div>
+        </div>
+
         <div style={{fontWeight:600,marginTop:20,marginBottom:8,fontSize:13}}>Revenue Trend</div>
         <Sparkline data={stock.revenue_series} width={460} height={60} />
 
