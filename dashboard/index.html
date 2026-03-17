@@ -239,6 +239,39 @@ html, body, #root {
   border: 1px solid #1e293b; margin-top: 16px;
 }
 
+.detail-overview {
+  background: var(--bg-card); border-radius: 10px; padding: 16px;
+  border: 1px solid #1e293b; margin-bottom: 20px;
+}
+.overview-description {
+  font-size: 13px; line-height: 1.7; color: var(--text); margin-bottom: 12px;
+}
+.overview-row {
+  display: flex; gap: 10px; font-size: 12px; line-height: 1.6;
+  color: var(--text-dim); margin-bottom: 8px;
+}
+.overview-label {
+  flex-shrink: 0; width: 78px; font-weight: 600;
+  color: var(--accent); font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.4px; padding-top: 1px;
+}
+.overview-verdict {
+  margin-top: 12px; padding-top: 12px; border-top: 1px solid #1e293b;
+  font-size: 12px; line-height: 1.7; color: var(--text); font-style: italic;
+}
+.weights-explainer {
+  background: var(--bg-card); border-radius: 10px; padding: 14px 16px;
+  border: 1px solid #1e293b; margin-top: 16px;
+}
+.weight-row {
+  display: flex; gap: 10px; font-size: 12px; line-height: 1.6;
+  color: var(--text-dim); margin-bottom: 8px;
+}
+.weight-row:last-child { margin-bottom: 0; }
+.weight-label {
+  flex-shrink: 0; width: 112px; font-weight: 600; color: var(--text); font-size: 11px;
+}
+
 /* ================================================================
    SCAN CONTROL BAR
    ================================================================ */
@@ -479,6 +512,22 @@ function DetailPanel({ stock, onClose }) {
           <span style={{color:"var(--text-dim)",fontSize:12}}>/100</span>
         </div>
 
+        {stock.overview && (
+          <div className="detail-overview">
+            <div style={{fontWeight:600,marginBottom:10,fontSize:13}}>Company Analysis</div>
+            <div className="overview-description">{stock.overview.description}</div>
+            <div className="overview-row">
+              <span className="overview-label">Tailwinds</span>
+              <span>{stock.overview.tailwinds}</span>
+            </div>
+            <div className="overview-row">
+              <span className="overview-label">Key Risk</span>
+              <span>{stock.overview.risks}</span>
+            </div>
+            <div className="overview-verdict">{stock.overview.verdict}</div>
+          </div>
+        )}
+
         <div style={{fontWeight:600,marginBottom:12,fontSize:13}}>Dimension Scores</div>
         {Object.entries(dimLabels).map(([key, label]) => (
           <div className="dim-bar-wrap" key={key}>
@@ -491,6 +540,23 @@ function DetailPanel({ stock, onClose }) {
             </div>
           </div>
         ))}
+
+        <div className="weights-explainer">
+          <div style={{fontWeight:600,marginBottom:10,fontSize:11,color:"var(--text-dim)",textTransform:"uppercase",letterSpacing:"0.5px"}}>Scoring Weights Explanation</div>
+          {[
+            {label:"Growth Quality",   text:"Measures revenue and earnings growth consistency over time — are sales actually accelerating?"},
+            {label:"Profitability",     text:"Measures margins (gross, operating, net) and return on capital — is the business efficiently making money?"},
+            {label:"Balance Sheet",     text:"Measures debt load, current ratio, and financial stability — can the company survive a downturn?"},
+            {label:"FCF Quality",       text:"Measures free cash flow relative to earnings — is the profit real cash or just accounting?"},
+            {label:"Momentum",          text:"Measures price trend strength relative to the market — is the stock actually moving in the right direction?"},
+            {label:"Market Signals",    text:"Measures analyst sentiment, institutional activity, and short interest — what is the smart money doing?"},
+          ].map(({label, text}) => (
+            <div className="weight-row" key={label}>
+              <span className="weight-label">{label}</span>
+              <span>{text}</span>
+            </div>
+          ))}
+        </div>
 
         <div style={{fontWeight:600,marginTop:20,marginBottom:8,fontSize:13}}>12-Month Forecast</div>
         <div className="forecast-grid">

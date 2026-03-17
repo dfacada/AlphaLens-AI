@@ -398,6 +398,147 @@ def _generate_summary(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  Company profiles (curated descriptions for major tickers)
+# ═══════════════════════════════════════════════════════════════════════════
+
+COMPANY_PROFILES: dict[str, str] = {
+    "AAPL":  "Apple designs and sells consumer electronics, software, and services. Its hardware lineup — iPhone, Mac, iPad, AirPods, Apple Watch — is complemented by a fast-growing Services segment (App Store, iCloud, Apple Pay) that now represents roughly 25% of revenue and carries significantly higher margins than hardware.",
+    "MSFT":  "Microsoft provides cloud infrastructure (Azure), productivity software (Office 365), and developer tools (GitHub, VS Code). Azure is the primary growth engine, competing directly with AWS and Google Cloud in a market expected to exceed $1 trillion, while the Copilot AI suite is being embedded across every product line.",
+    "NVDA":  "NVIDIA designs GPUs originally built for gaming that have become the dominant hardware for AI training and inference. Its CUDA software ecosystem creates deep switching costs, and its data center segment now dwarfs gaming revenue as hyperscalers race to build AI infrastructure at scale.",
+    "GOOGL": "Alphabet operates Google Search, YouTube, Google Cloud, and a suite of advertising products that collectively reach billions of users daily. Search advertising remains the dominant profit driver, while Google Cloud is scaling rapidly toward profitability and DeepMind's Gemini models represent a significant AI asset.",
+    "GOOG":  "Alphabet operates Google Search, YouTube, Google Cloud, and a suite of advertising products that collectively reach billions of users daily. Search advertising remains the dominant profit driver, while Google Cloud is scaling rapidly toward profitability and DeepMind's Gemini models represent a significant AI asset.",
+    "AMZN":  "Amazon operates the world's largest e-commerce marketplace alongside AWS, which generates the majority of operating profit despite being a fraction of total revenue. The combination of logistics network scale and cloud dominance creates a dual-engine business model with compounding advantages and multiple expansion levers.",
+    "META":  "Meta operates Facebook, Instagram, and WhatsApp — the largest social media ecosystem on earth — monetized almost entirely through targeted digital advertising. It is also investing heavily in AI infrastructure and Reality Labs, which pressures near-term margins but positions it for emerging compute and social platforms.",
+    "TSLA":  "Tesla designs and manufactures battery electric vehicles and energy storage systems, and holds the highest gross margins in the traditional auto industry. It has a growing software and services segment (Full Self-Driving, Supercharging), but faces intensifying competition from Chinese EV makers and legacy OEMs.",
+    "JPM":   "JPMorgan Chase is the largest U.S. bank by assets, operating consumer banking, investment banking, commercial banking, and asset management divisions. It is widely regarded as best-in-class for risk management, with a fortress balance sheet and the highest return on equity among mega-cap banks.",
+    "V":     "Visa operates the world's largest retail electronic payments network, earning transaction and service fees without taking on credit risk. Its business is an asset-light toll booth on global commerce — operating margins exceed 60% and network effects make displacement nearly impossible.",
+    "MA":    "Mastercard runs the second-largest global payments network and earns fees on every transaction processed across its rails. Like Visa, it is asset-light and highly profitable, with a structurally advantaged position in the secular shift from cash to digital payments.",
+    "BRK.B": "Berkshire Hathaway is a conglomerate controlled by Warren Buffett that owns wholly or partially businesses across insurance (GEICO, Gen Re), railroads (BNSF), utilities (BHE), manufacturing, and a large publicly traded equity portfolio dominated by Apple and financial stocks.",
+    "UNH":   "UnitedHealth Group is the largest U.S. health insurer and operates Optum, a fast-growing health services division covering pharmacy benefits, care delivery, and health IT. It is a vertically integrated health system with a track record of consistent mid-teens EPS growth across economic cycles.",
+    "LLY":   "Eli Lilly is a pharmaceutical company best known for its GLP-1 drug franchise (Mounjaro, Zepbound) for diabetes and obesity, which is reshaping the company's revenue trajectory. It is one of the fastest-growing large-cap pharma companies and is investing aggressively in manufacturing capacity to meet surging demand.",
+    "AVGO":  "Broadcom designs semiconductors and infrastructure software for data centers, networking, and wireless connectivity. Its acquisition of VMware layers high-margin recurring software revenue on top of its chip business, and its custom AI chip relationships with hyperscalers are a growing revenue driver.",
+    "ORCL":  "Oracle provides database software, cloud infrastructure (OCI), and enterprise applications (ERP/CRM via NetSuite and Fusion Cloud). It is in the middle of a multi-year cloud transition that is accelerating revenue growth, with AI-driven database and infrastructure demand becoming a meaningful tailwind.",
+    "NFLX":  "Netflix is the world's leading subscription video streaming platform with over 300 million paid memberships globally. It re-accelerated growth through password-sharing enforcement and an ad-supported tier, and is now investing in live events and gaming to reduce content-driven churn.",
+    "AMD":   "Advanced Micro Devices designs CPUs and GPUs for data centers, gaming, and embedded systems. It has taken significant server CPU share from Intel over the past five years and is now competing with NVIDIA in AI accelerator chips with its MI300X series.",
+    "INTC":  "Intel designs and manufactures CPUs for PCs and data center servers. It is undergoing a costly strategic transformation — rebuilding its process technology leadership and launching a contract foundry (Intel Foundry Services) — while losing share to AMD in CPUs and NVIDIA in AI.",
+    "CRM":   "Salesforce is the leading cloud CRM platform, providing sales, service, marketing, and analytics software to enterprise customers on a subscription basis. It is integrating AI agents (Agentforce) across its platform to protect its market position as software procurement patterns shift toward outcomes-based buying.",
+    "TSMC":  "TSMC is the world's dominant contract semiconductor manufacturer, producing chips designed by Apple, NVIDIA, AMD, Qualcomm, and others. As the only company capable of manufacturing the most advanced chips at scale, it sits at the center of the global AI infrastructure buildout.",
+    "SHOP":  "Shopify provides e-commerce software and payment infrastructure for small businesses to enterprise merchants globally. It has expanded from a storefront platform into a full commerce operating system — spanning logistics, point-of-sale, lending, and cross-border payments — making merchant switching costs very high.",
+    "SPOT":  "Spotify is the world's largest audio streaming platform with over 600 million monthly active users across music, podcasts, and audiobooks. After years of thin margins, it is now converting scale into profit through price increases, podcast monetization, and its expanding creator ecosystem.",
+    "COIN":  "Coinbase is the largest regulated cryptocurrency exchange in the United States, earning transaction fees and subscription revenue from retail and institutional crypto traders. Its revenue is highly correlated with crypto market volatility and Bitcoin price cycles, making it a high-beta proxy on digital asset sentiment.",
+    "PLTR":  "Palantir builds AI and data analytics platforms used by government defense agencies (Gotham) and commercial enterprises (Foundry, AIP). Its AI Platform is gaining commercial momentum and it holds a structurally advantaged position in U.S. government AI contracts as defense budgets shift toward software.",
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Company Overview (narrative context for the detail panel)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _generate_overview(
+    ticker: str,
+    dimensions: dict[str, float],
+    metrics: dict,
+    market: dict,
+    composite: float,
+    rating: str,
+) -> dict[str, str]:
+    """Return a dict with description, tailwinds, risks, and verdict strings."""
+
+    # --- Company description ---
+    description = COMPANY_PROFILES.get(ticker.upper())
+    if not description:
+        rev = _last_n(metrics.get("revenue", []))
+        gp = _last_n(metrics.get("gross_profit", []))
+        gross_margin = _safe_div(gp[-1], rev[-1]) if gp and rev else 0.0
+        if gross_margin > 0.60:
+            biz_type = "a high-margin software or services business"
+        elif gross_margin > 0.40:
+            biz_type = "a product or mixed-revenue business with solid margins"
+        elif gross_margin > 0.20:
+            biz_type = "a product-heavy business with moderate margins"
+        else:
+            biz_type = "a capital-intensive or low-margin business"
+        rev_q = rev[-1] if rev else 0.0
+        if rev_q >= 1e9:
+            rev_display = f"${rev_q / 1e9:.1f}B"
+        elif rev_q >= 1e6:
+            rev_display = f"${rev_q / 1e6:.0f}M"
+        else:
+            rev_display = "N/A"
+        description = (
+            f"{ticker} appears to be {biz_type}, reporting {rev_display} in its most recent quarter. "
+            f"Financial data is sourced from SEC 10-Q/10-K filings."
+        )
+
+    # --- Tailwinds (top 2 scoring dimensions) ---
+    dim_positive = {
+        "growth":         "accelerating revenue growth",
+        "profitability":  "strong and expanding margins",
+        "balance_sheet":  "a clean balance sheet with low debt",
+        "fcf":            "high-quality free cash flow conversion",
+        "momentum":       "bullish price momentum",
+        "market_signals": "positive institutional and options sentiment",
+    }
+    sorted_dims = sorted(dimensions.items(), key=lambda x: x[1], reverse=True)
+    top_parts = [dim_positive[k] for k, v in sorted_dims[:2] if v >= 55]
+    if not top_parts:
+        top_parts = [dim_positive[sorted_dims[0][0]]]
+    tailwinds = "The primary performance driver is " + " and ".join(top_parts) + "."
+
+    # --- Risk (weakest dimension, with a leverage override) ---
+    dim_risk_text = {
+        "growth":         "slowing or declining revenue growth",
+        "profitability":  "margin compression or low returns on capital",
+        "balance_sheet":  "elevated debt load and thin liquidity",
+        "fcf":            "weak free cash flow relative to reported earnings",
+        "momentum":       "price underperformance and deteriorating technicals",
+        "market_signals": "negative institutional positioning",
+    }
+    debt_vals = _last_n(metrics.get("total_debt", []))
+    rev_vals = _last_n(metrics.get("revenue", []))
+    high_leverage = (
+        bool(debt_vals and rev_vals and rev_vals[-1] > 0)
+        and (debt_vals[-1] / rev_vals[-1]) > 1.5
+    )
+    weakest_key, weakest_val = sorted_dims[-1]
+    if high_leverage and weakest_key != "balance_sheet":
+        risks = (
+            f"Elevated leverage is a structural concern, compounded by "
+            f"{dim_risk_text.get(weakest_key, weakest_key)} "
+            f"(dimension score: {weakest_val:.0f}/100)."
+        )
+    else:
+        risks = (
+            f"The biggest risk to the thesis is "
+            f"{dim_risk_text.get(weakest_key, weakest_key)} "
+            f"(dimension score: {weakest_val:.0f}/100)."
+        )
+
+    # --- Verdict (ties score to standout strength and key weakness) ---
+    dim_label_map = {
+        "growth": "Growth Quality", "profitability": "Profitability",
+        "balance_sheet": "Balance Sheet", "fcf": "FCF Quality",
+        "momentum": "Momentum", "market_signals": "Market Signals",
+    }
+    standout_key, standout_val = sorted_dims[0]
+    verdict = (
+        f"{ticker}'s {composite:.1f} composite score reflects "
+        f"{dim_positive[standout_key]} "
+        f"({dim_label_map[standout_key]}: {standout_val:.0f}) but the "
+        f"{dim_label_map[weakest_key]} score of {weakest_val:.0f} flags "
+        f"{dim_risk_text.get(weakest_key, 'execution risk')} — "
+        f"overall rating: {rating}."
+    )
+
+    return {
+        "description": description,
+        "tailwinds":   tailwinds,
+        "risks":       risks,
+        "verdict":     verdict,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  Main entry point
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -467,6 +608,9 @@ def score_stock(
     # --- AI Summary ---
     summary = _generate_summary(ticker, dimensions, metrics, market_data, composite, rating)
 
+    # --- Company Overview ---
+    overview = _generate_overview(ticker, dimensions, metrics, market_data, composite, rating)
+
     return {
         "ticker": ticker,
         "company_name": market_data.get("company_name", ticker),
@@ -477,6 +621,7 @@ def score_stock(
         "forecast": forecast,
         "risk": risk,
         "summary": summary,
+        "overview": overview,
         "revenue_series": rev_series,
         "fcf_series": fcf_series,
         "market_cap": market_data.get("market_cap"),
