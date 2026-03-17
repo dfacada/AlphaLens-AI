@@ -29,8 +29,13 @@ logger = logging.getLogger("alphalens.polygon")
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-CACHE_DIR = Path(__file__).resolve().parent.parent / ".cache"
-CACHE_DIR.mkdir(exist_ok=True)
+_PROJECT_CACHE = Path(__file__).resolve().parent.parent / ".cache"
+try:
+    _PROJECT_CACHE.mkdir(exist_ok=True)
+    CACHE_DIR = _PROJECT_CACHE
+except OSError:
+    CACHE_DIR = Path("/tmp") / ".alphalens_cache"
+    CACHE_DIR.mkdir(exist_ok=True)
 CACHE_TTL_SECONDS = 6 * 3600  # 6 hours
 
 POLYGON_BASE = "https://api.polygon.io"

@@ -1,7 +1,5 @@
 fastapi
 uvicorn
 aiohttp
-pandas
 numpy
-scipy
 python-dotenv

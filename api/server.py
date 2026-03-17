@@ -80,7 +80,12 @@ _scan_state: dict[str, Any] = {
     "results": [],
 }
 
-RESULTS_CACHE = PROJECT_ROOT / ".cache" / "_last_scan.json"
+_PROJECT_CACHE = PROJECT_ROOT / ".cache"
+try:
+    _PROJECT_CACHE.mkdir(exist_ok=True)
+    RESULTS_CACHE = _PROJECT_CACHE / "_last_scan.json"
+except OSError:
+    RESULTS_CACHE = Path("/tmp") / ".alphalens_cache" / "_last_scan.json"
 
 
 def _load_cached_results() -> list[dict]:
