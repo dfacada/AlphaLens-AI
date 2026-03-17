@@ -485,6 +485,12 @@ def score_stock(
         "insider_activity": market_data.get("insider_activity", "unknown"),
         "options_sentiment": market_data.get("options_sentiment", "neutral"),
         "quarters_available": edgar_data.get("quarters", 0),
+        # Data provenance fields
+        "edgar_lag_days": edgar_data.get("edgar_lag_days", -1),
+        "price_source": market_data.get("price_source", "unknown"),
+        "insider_source": market_data.get("insider_source", "unknown"),
+        "options_source": market_data.get("options_source", "unknown"),
+        "market_data_stub": market_data.get("stub", True),
     }
 
 

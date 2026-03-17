@@ -34,7 +34,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 import aiohttp
 from dotenv import load_dotenv
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 import uvicorn
@@ -100,15 +100,16 @@ _scan_state["results"] = _load_cached_results()
 # ---------------------------------------------------------------------------
 # Background scan task
 # ---------------------------------------------------------------------------
-async def _background_scan() -> None:
+async def _background_scan(tickers: list[str] | None = None) -> None:
     """Run the full pipeline in the background."""
+    tickers = tickers or DEFAULT_UNIVERSE
     _scan_state["running"] = True
     _scan_state["started_at"] = time.time()
-    _scan_state["tickers_total"] = len(DEFAULT_UNIVERSE)
+    _scan_state["tickers_total"] = len(tickers)
     _scan_state["tickers_done"] = 0
 
     try:
-        results = await run_scan()
+        results = await run_scan(tickers=tickers)
         _scan_state["results"] = results
         _scan_state["tickers_done"] = len(results)
 
@@ -161,13 +162,14 @@ async def single_ticker(symbol: str):
 
 
 @app.post("/scan/start")
-async def scan_start(background_tasks: BackgroundTasks):
-    """Kick off a background scan of the default universe."""
+async def scan_start(background_tasks: BackgroundTasks, ticker: str | None = Query(default=None)):
+    """Kick off a background scan. Pass ?ticker=AAPL to scan a single stock."""
     if _scan_state["running"]:
         return {"status": "already_running", "started_at": _scan_state["started_at"]}
 
-    background_tasks.add_task(_background_scan)
-    return {"status": "started", "tickers": len(DEFAULT_UNIVERSE)}
+    tickers = [ticker.upper()] if ticker else DEFAULT_UNIVERSE
+    background_tasks.add_task(_background_scan, tickers)
+    return {"status": "started", "tickers": len(tickers), "universe": tickers}
 
 
 @app.get("/scan/status")
@@ -224,6 +226,75 @@ async def scan_results_top():
     ]
 
     return {"lanes": lanes, "total": len(results)}
+
+
+@app.get("/sources")
+async def data_sources():
+    """Return metadata about each data source used by AlphaLens."""
+    from clients.edgar_client import CACHE_TTL_SECONDS as EDGAR_TTL
+    from clients.polygon_client import CACHE_TTL_SECONDS as POLYGON_TTL, API_KEY as POLY_KEY
+
+    return {
+        "sources": [
+            {
+                "name": "SEC EDGAR (XBRL)",
+                "endpoint": "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json",
+                "type": "filing-based",
+                "description": "10-Q and 10-K financial statements",
+                "cache_ttl_seconds": EDGAR_TTL,
+                "notes": "Cache invalidated when new accession number detected",
+            },
+            {
+                "name": "SEC EDGAR (Submissions)",
+                "endpoint": "https://data.sec.gov/submissions/CIK{cik}.json",
+                "type": "filing-based",
+                "description": "Detects new filings to invalidate stale caches",
+            },
+            {
+                "name": "Polygon.io Snapshot",
+                "endpoint": "/v2/snapshot/locale/us/markets/stocks/tickers/{ticker}",
+                "type": "real-time",
+                "description": "Current day price for momentum calculations",
+                "cache_ttl_seconds": POLYGON_TTL,
+                "available": bool(POLY_KEY),
+            },
+            {
+                "name": "Polygon.io Aggregates",
+                "endpoint": "/v2/aggs/ticker/{ticker}/range/1/day/{start}/{end}",
+                "type": "delayed",
+                "description": "Daily OHLCV bars (fallback for price)",
+                "available": bool(POLY_KEY),
+            },
+            {
+                "name": "Polygon.io Technical Indicators",
+                "endpoint": "/v1/indicators/sma|rsi/{ticker}",
+                "type": "delayed",
+                "description": "SMA-50, SMA-200, RSI-14",
+                "available": bool(POLY_KEY),
+            },
+            {
+                "name": "Polygon.io Options Snapshot",
+                "endpoint": "/v3/snapshot/options/{ticker}",
+                "type": "delayed",
+                "description": "Options open interest for sentiment",
+                "available": bool(POLY_KEY),
+            },
+            {
+                "name": "Polygon.io Insider Transactions",
+                "endpoint": "/v2/reference/insider-transactions?ticker={ticker}",
+                "type": "delayed",
+                "description": "Insider buy/sell activity",
+                "available": bool(POLY_KEY),
+                "fallback": "SEC EDGAR Form 4 via EFTS",
+            },
+            {
+                "name": "SEC EDGAR Form 4 (Fallback)",
+                "endpoint": "https://efts.sec.gov/LATEST/search-index?forms=4",
+                "type": "filing-based",
+                "description": "Insider filings fallback when Polygon data is empty",
+            },
+        ],
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -34,6 +34,7 @@ CACHE_DIR.mkdir(exist_ok=True)
 CACHE_TTL_SECONDS = 6 * 3600  # 6 hours
 
 POLYGON_BASE = "https://api.polygon.io"
+SEC_EFTS_BASE = "https://efts.sec.gov/LATEST/search-index"
 API_KEY = os.getenv("POLYGON_API_KEY", "")
 
 MAX_RETRIES = 3
@@ -129,6 +130,54 @@ _STUB_PROFILES: dict[str, dict[str, Any]] = {
 }
 
 
+async def _fetch_sec_form4(
+    session: aiohttp.ClientSession, ticker: str
+) -> dict[str, Any]:
+    """Fallback: parse SEC EDGAR EFTS for recent Form 4 insider filings."""
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    start = (datetime.utcnow() - timedelta(days=90)).strftime("%Y-%m-%d")
+    url = f"{SEC_EFTS_BASE}?q=%22{ticker}%22&dateRange=custom&startdt={start}&enddt={today}&forms=4"
+
+    headers = {
+        "User-Agent": f"AlphaLens/1.0 ({os.getenv('SEC_EDGAR_EMAIL', 'user@example.com')})",
+        "Accept": "application/json",
+    }
+    try:
+        async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+            if resp.status != 200:
+                return {"activity": "unknown", "source": "unavailable"}
+            data = await resp.json(content_type=None)
+    except (aiohttp.ClientError, asyncio.TimeoutError):
+        return {"activity": "unknown", "source": "unavailable"}
+
+    hits = data.get("hits", {}).get("hits", [])
+    if not hits:
+        return {"activity": "neutral", "source": "sec_form4"}
+
+    buy_count = 0
+    sell_count = 0
+    for hit in hits[:20]:
+        src = hit.get("_source", {})
+        form_type = src.get("form_type", "")
+        # Form 4 filings — count as activity indicator
+        if "4" in form_type:
+            display = src.get("display_names", [])
+            file_desc = " ".join(display).lower() if display else ""
+            if "acquisition" in file_desc or "purchase" in file_desc:
+                buy_count += 1
+            else:
+                sell_count += 1
+
+    if buy_count > sell_count + 2:
+        activity = "net_buying"
+    elif sell_count > buy_count + 2:
+        activity = "net_selling"
+    else:
+        activity = "neutral"
+
+    return {"activity": activity, "source": "sec_form4", "buys": buy_count, "sells": sell_count}
+
+
 def _stub_data(ticker: str) -> dict[str, Any]:
     """Return realistic placeholder data when no Polygon key is configured."""
     p = _STUB_PROFILES.get(ticker, {})
@@ -160,6 +209,10 @@ def _stub_data(ticker: str) -> dict[str, Any]:
         "insider_net_shares": 0,
         "daily_prices": [],
         "stub": True,
+        "price_source": "stub",
+        "insider_source": "stub",
+        "options_source": "unavailable",
+        "last_fetch_ts": time.time(),
     }
 
 
@@ -192,6 +245,7 @@ class PolygonClient:
         start_date = (datetime.utcnow() - timedelta(days=365)).strftime("%Y-%m-%d")
 
         ticker_url = f"{POLYGON_BASE}/v3/reference/tickers/{ticker}"
+        snapshot_url = f"{POLYGON_BASE}/v2/snapshot/locale/us/markets/stocks/tickers/{ticker}"
         agg_url = f"{POLYGON_BASE}/v2/aggs/ticker/{ticker}/range/1/day/{start_date}/{end_date}"
         sma50_url = f"{POLYGON_BASE}/v1/indicators/sma/{ticker}"
         sma200_url = f"{POLYGON_BASE}/v1/indicators/sma/{ticker}"
@@ -201,6 +255,7 @@ class PolygonClient:
 
         (
             ticker_info,
+            snapshot_data,
             agg_data,
             sma50_data,
             sma200_data,
@@ -209,6 +264,7 @@ class PolygonClient:
             insider_data,
         ) = await asyncio.gather(
             _fetch_json(session, ticker_url),
+            _fetch_json(session, snapshot_url),
             _fetch_json(session, agg_url, {"adjusted": "true", "sort": "asc", "limit": "5000"}),
             _fetch_json(session, sma50_url, {"window": "50", "timespan": "day", "series_type": "close"}),
             _fetch_json(session, sma200_url, {"window": "200", "timespan": "day", "series_type": "close"}),
@@ -225,13 +281,23 @@ class PolygonClient:
             company_name = res.get("name", ticker)
             market_cap = res.get("market_cap")
 
-        # --- Parse daily prices & last close ---
-        daily_prices: list[dict[str, Any]] = []
+        # --- Real-time price from snapshot (Change 2) ---
         last_close: float | None = None
+        price_source = "aggregates"
+        if snapshot_data and "ticker" in snapshot_data:
+            snap = snapshot_data["ticker"]
+            day_data = snap.get("day", {})
+            snap_close = day_data.get("c")
+            if snap_close:
+                last_close = snap_close
+                price_source = "snapshot_realtime"
+
+        # --- Parse daily prices & fallback last close from aggs ---
+        daily_prices: list[dict[str, Any]] = []
         if agg_data and "results" in agg_data:
             for bar in agg_data["results"]:
                 daily_prices.append({"t": bar.get("t"), "c": bar.get("c")})
-            if daily_prices:
+            if last_close is None and daily_prices:
                 last_close = daily_prices[-1]["c"]
 
         # --- SMA50 ---
@@ -271,9 +337,11 @@ class PolygonClient:
 
         # --- Options sentiment ---
         options_sentiment = "neutral"
+        options_source = "unavailable"
         if options_data and "results" in options_data:
             results = options_data["results"]
             if isinstance(results, list) and len(results) > 0:
+                options_source = "polygon"
                 total_call_oi = sum(r.get("details", {}).get("open_interest", 0) for r in results if r.get("details", {}).get("contract_type") == "call")
                 total_put_oi = sum(r.get("details", {}).get("open_interest", 0) for r in results if r.get("details", {}).get("contract_type") == "put")
                 if total_call_oi > total_put_oi * 1.3:
@@ -281,10 +349,13 @@ class PolygonClient:
                 elif total_put_oi > total_call_oi * 1.3:
                     options_sentiment = "bearish"
 
-        # --- Insider transactions ---
+        # --- Insider transactions (Change 1: try Polygon, fall back to SEC Form 4) ---
         insider_activity = "unknown"
         insider_net_shares = 0
-        if insider_data and "results" in insider_data:
+        insider_source = "unavailable"
+
+        if insider_data and "results" in insider_data and len(insider_data["results"]) > 0:
+            insider_source = "polygon"
             for txn in insider_data["results"]:
                 shares = txn.get("shares", 0) or 0
                 acq_disp = txn.get("acquisition_or_disposition", "")
@@ -298,6 +369,12 @@ class PolygonClient:
                 insider_activity = "net_selling"
             else:
                 insider_activity = "neutral"
+        else:
+            # Fallback to SEC EDGAR Form 4 filings
+            logger.info("Polygon insider data empty for %s, falling back to SEC Form 4", ticker)
+            form4 = await _fetch_sec_form4(session, ticker)
+            insider_activity = form4.get("activity", "unknown")
+            insider_source = form4.get("source", "unavailable")
 
         result: dict[str, Any] = {
             "ticker": ticker,
@@ -313,10 +390,15 @@ class PolygonClient:
             "options_sentiment": options_sentiment,
             "insider_activity": insider_activity,
             "insider_net_shares": insider_net_shares,
-            "daily_prices": daily_prices[-90:],  # keep last ~90 trading days
+            "daily_prices": daily_prices[-90:],
             "stub": False,
+            "price_source": price_source,
+            "insider_source": insider_source,
+            "options_source": options_source,
+            "last_fetch_ts": time.time(),
         }
 
         cache.write_text(json.dumps(result, default=str))
-        logger.info("Fetched & cached Polygon data for %s", ticker)
+        logger.info("Fetched & cached Polygon data for %s (price via %s, insider via %s)",
+                     ticker, price_source, insider_source)
         return result

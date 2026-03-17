@@ -29,10 +29,7 @@ logger = logging.getLogger("alphalens.pipeline")
 # Default scan universe
 # ---------------------------------------------------------------------------
 DEFAULT_UNIVERSE: list[str] = [
-    "AAPL", "MSFT", "NVDA", "META", "GOOGL",
-    "AMZN", "JPM", "V", "UNH", "JNJ",
-    "XOM", "PG", "HD", "MA", "AVGO",
-    "MRK", "COST", "CVX", "ABBV", "PEP",
+    "NVDA",
 ]
 
 

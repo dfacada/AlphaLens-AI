@@ -122,6 +122,16 @@ html, body, #root {
 .btn-outline:hover { background: var(--accent-dim); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 
+/* Ticker input */
+.ticker-input {
+  background: var(--bg); border: 1px solid #1e293b; border-radius: 8px;
+  padding: 8px 12px; color: var(--accent); font-family: var(--font-mono);
+  font-size: 14px; font-weight: 700; width: 100px; text-transform: uppercase;
+  outline: none; transition: var(--transition); letter-spacing: 1px;
+}
+.ticker-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+.ticker-input::placeholder { color: var(--text-dim); font-weight: 400; text-transform: none; letter-spacing: 0; }
+
 /* ================================================================
    STATUS BADGE
    ================================================================ */
@@ -281,7 +291,7 @@ html, body, #root {
 
 const { useState, useEffect, useCallback, useRef } = React;
 
-const API = "http://localhost:8000";
+const API = window.location.hostname === "localhost" ? "http://localhost:8000" : "";
 
 /* ----------------------------------------------------------------
    MOCK DATA — used when the API is unreachable so the UI stays
@@ -432,6 +442,11 @@ function StockCard({ stock, onClick }) {
       <div className="sparkline-wrap">
         <Sparkline data={stock.revenue_series} />
       </div>
+      {stock.edgar_lag_days != null && stock.edgar_lag_days >= 0 && (
+        <div style={{fontSize:10,color:"var(--text-dim)",marginBottom:4}}>
+          Fundamentals as of {stock.edgar_lag_days} days ago
+        </div>
+      )}
       <div className="summary">{stock.summary}</div>
     </div>
   );
@@ -506,6 +521,32 @@ function DetailPanel({ stock, onClose }) {
           <div style={{fontWeight:600,marginBottom:6,color:"var(--text)",fontSize:13}}>AI Analysis</div>
           {stock.summary}
         </div>
+
+        <div style={{fontWeight:600,marginTop:20,marginBottom:8,fontSize:13}}>Data Sources</div>
+        <div style={{background:"var(--bg-card)",borderRadius:10,padding:14,border:"1px solid #1e293b",fontSize:12,lineHeight:1.8,color:"var(--text-dim)"}}>
+          <div>
+            <span style={{color:"var(--text)"}}>Fundamentals:</span>{" "}
+            SEC EDGAR (10-Q/10-K filings{stock.edgar_lag_days != null && stock.edgar_lag_days >= 0 ? `, ${stock.edgar_lag_days} days ago` : ""})
+          </div>
+          <div>
+            <span style={{color:"var(--text)"}}>Price & Technicals:</span>{" "}
+            {stock.market_data_stub ? "Stub data (no Polygon key)" :
+              stock.price_source === "snapshot_realtime" ? "Polygon.io (real-time snapshot)" :
+              stock.price_source === "aggregates" ? "Polygon.io (delayed aggregates)" :
+              "Polygon.io"}
+          </div>
+          <div>
+            <span style={{color:"var(--text)"}}>Insider Activity:</span>{" "}
+            {stock.insider_source === "polygon" ? "Polygon.io" :
+             stock.insider_source === "sec_form4" ? "SEC Form 4 Filings" :
+             stock.insider_source === "stub" ? "Stub data" : "Unavailable"}
+          </div>
+          <div>
+            <span style={{color:"var(--text)"}}>Options Sentiment:</span>{" "}
+            {stock.options_source === "polygon" ? "Polygon.io" :
+             stock.options_source === "stub" ? "Stub data" : "Unavailable"}
+          </div>
+        </div>
       </div>
     </>
   );
@@ -556,9 +597,11 @@ function App() {
   const [selected, setSelected] = useState(null);
   const [apiOnline, setApiOnline] = useState(false);
   const [activePage, setActivePage] = useState("scanner");
+  const [tickerInput, setTickerInput] = useState("");
+  const [singleResult, setSingleResult] = useState(null);
   const pollRef = useRef(null);
 
-  /* Fetch results (try API, fall back to mocks) */
+  /* Fetch lane results (try API, fall back to mocks) */
   const fetchResults = useCallback(async () => {
     try {
       const res = await fetch(`${API}/scan/results/top`);
@@ -580,31 +623,34 @@ function App() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchResults(); }, [fetchResults]);
+  /* Check API on load */
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`${API}/health`);
+        if (res.ok) setApiOnline(true);
+      } catch {}
+      setLoading(false);
+    })();
+  }, []);
 
-  /* Start scan */
+  /* Scan a single ticker via /ticker/{symbol} */
   const startScan = async () => {
+    const sym = tickerInput.trim().toUpperCase();
+    if (!sym) return;
     setScanning(true);
+    setSingleResult(null);
     try {
-      await fetch(`${API}/scan/start`, { method: "POST" });
-      // Poll status
-      pollRef.current = setInterval(async () => {
-        try {
-          const res = await fetch(`${API}/scan/status`);
-          const st = await res.json();
-          if (!st.running && st.finished_at) {
-            clearInterval(pollRef.current);
-            setScanning(false);
-            fetchResults();
-          }
-        } catch {}
-      }, 3000);
+      const res = await fetch(`${API}/ticker/${sym}`);
+      if (!res.ok) throw new Error("api error");
+      const data = await res.json();
+      setSingleResult(data);
     } catch {
+      setSingleResult(null);
+    } finally {
       setScanning(false);
     }
   };
-
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
   return (
     <div className="app">
@@ -615,8 +661,17 @@ function App() {
           <span style={{fontSize:11,color: apiOnline ? "#34d399" : "#f87171"}}>
             {apiOnline ? "API Connected" : "Offline Mode (Mock Data)"}
           </span>
+          <input
+            className="ticker-input"
+            type="text"
+            placeholder="Ticker"
+            value={tickerInput}
+            onChange={e => setTickerInput(e.target.value.toUpperCase().slice(0, 5))}
+            onKeyDown={e => { if (e.key === "Enter" && !scanning && apiOnline) startScan(); }}
+            maxLength={5}
+          />
           <button className="btn btn-accent" onClick={startScan} disabled={scanning || !apiOnline}>
-            {scanning ? "Scanning…" : "Run Scan"}
+            {scanning ? "Scanning…" : tickerInput.trim() ? `Scan ${tickerInput.trim().toUpperCase()}` : "Run Scan"}
           </button>
         </div>
       </header>
@@ -643,38 +698,41 @@ function App() {
         <main className="main">
           {/* Scan control bar */}
           <div className="scan-bar">
-            <div className={`status-dot ${scanning ? "running" : total > 0 ? "done" : "idle"}`} />
+            <div className={`status-dot ${scanning ? "running" : singleResult ? "done" : "idle"}`} />
             <div style={{flex:1}}>
               <div style={{fontWeight:600,fontSize:13}}>
-                {scanning ? "Scan in progress…" : total > 0 ? `${total} stocks analyzed` : "Ready to scan"}
+                {scanning ? "Analyzing…" : singleResult ? `${singleResult.ticker} analyzed` : "Enter a ticker and click Scan"}
               </div>
               <div style={{fontSize:11,color:"var(--text-dim)",marginTop:2}}>
-                {!apiOnline && "Running in offline mode with demo data."}
-                {apiOnline && !scanning && total > 0 && "Click Run Scan to refresh with live EDGAR + Polygon data."}
-                {apiOnline && !scanning && total === 0 && "Click Run Scan to begin analysis."}
+                {!apiOnline && "API offline — start the server with: python api/server.py"}
+                {apiOnline && !scanning && !singleResult && "Type a stock ticker above and hit Scan to analyze it."}
+                {apiOnline && !scanning && singleResult && "Enter another ticker to analyze a different stock."}
                 {scanning && "Fetching SEC filings and market data…"}
               </div>
             </div>
           </div>
 
-          {/* Lanes */}
-          {loading ? (
+          {/* Result */}
+          {scanning ? (
             <div>
-              {[1,2].map(i => (
-                <div className="lane" key={i}>
-                  <div className="skeleton" style={{width:180,height:20,marginBottom:14}} />
-                  <div className="lane-row">{[1,2,3,4].map(j => <SkeletonCard key={j} />)}</div>
-                </div>
-              ))}
+              <div className="lane">
+                <div className="skeleton" style={{width:180,height:20,marginBottom:14}} />
+                <div className="lane-row"><SkeletonCard /></div>
+              </div>
             </div>
-          ) : lanes.length > 0 ? (
-            lanes.map(lane => (
-              <Lane key={lane.title} title={lane.title} stocks={lane.stocks} onCardClick={setSelected} />
-            ))
+          ) : singleResult ? (
+            <div>
+              <div className="lane">
+                <div className="lane-title">Analysis Result</div>
+                <div className="lane-row">
+                  <StockCard stock={singleResult} onClick={setSelected} />
+                </div>
+              </div>
+            </div>
           ) : (
             <div className="empty-state">
               <div className="icon">&#128200;</div>
-              <p>No scan results yet. Hit <strong>Run Scan</strong> to analyze the stock universe using SEC EDGAR fundamentals and Polygon.io market data.</p>
+              <p>Enter a stock ticker (e.g. <strong>AAPL</strong>, <strong>NVDA</strong>, <strong>TSLA</strong>) in the field above and click <strong>Scan</strong> to analyze it using SEC EDGAR fundamentals and Polygon.io market data.</p>
             </div>
           )}
         </main>

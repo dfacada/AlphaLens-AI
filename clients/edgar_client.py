@@ -38,6 +38,7 @@ CACHE_TTL_SECONDS = 6 * 3600  # 6 hours
 
 COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 COMPANY_FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
+SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
 
 # Hardcoded fallback CIK map for the default scan universe.
 # Used when the SEC ticker-list endpoint is unreachable (e.g., sandboxed envs).
@@ -274,6 +275,41 @@ def _build_metric_series(
     return series
 
 
+def _compute_lag_days(metrics: dict[str, list[dict[str, Any]]]) -> int:
+    """Compute days since the most recent filing date across all metrics."""
+    from datetime import datetime
+
+    latest_filed = ""
+    for series in metrics.values():
+        for pt in series:
+            filed = pt.get("filed", "")
+            if filed > latest_filed:
+                latest_filed = filed
+
+    if not latest_filed:
+        return -1
+
+    try:
+        filed_date = datetime.strptime(latest_filed, "%Y-%m-%d")
+        return (datetime.utcnow() - filed_date).days
+    except ValueError:
+        return -1
+
+
+async def _check_latest_accession(
+    session: aiohttp.ClientSession, cik: str
+) -> str | None:
+    """Fetch the latest accession number from SEC submissions to detect new filings."""
+    url = SUBMISSIONS_URL.format(cik=cik)
+    data = await _fetch_json(session, url)
+    if data is None:
+        return None
+    try:
+        return data["filings"]["recent"]["accessionNumber"][0]
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Sample data generator (offline / sandbox fallback)
 # ---------------------------------------------------------------------------
@@ -387,36 +423,58 @@ class EdgarClient:
         The returned dict has:
           • ticker
           • cik
-          • metrics   – dict mapping metric name → list[{end, val, filed, form}]
-          • quarters  – int, count of unique period-end dates across all metrics
+          • metrics        – dict mapping metric name → list[{end, val, filed, form}]
+          • quarters        – int, count of unique period-end dates across all metrics
+          • edgar_lag_days  – days since the most recent filing date
+          • last_accession  – latest accession number (for cache invalidation)
+          • last_fetch_ts   – timestamp of when this data was fetched
         """
         ticker = ticker.upper()
         cache = _cache_path(ticker)
 
-        # 1. Check cache
-        if _cache_is_valid(cache):
-            logger.info("EDGAR cache hit for %s", ticker)
-            return json.loads(cache.read_text())
-
-        # 2. Resolve CIK
+        # 1. Resolve CIK (needed for accession check even if cache exists)
         if self._cik_map is None:
             self._cik_map = await _load_cik_map(session)
 
         cik = self._cik_map.get(ticker)
+
+        # 2. Check cache with accession-based invalidation
+        if _cache_is_valid(cache):
+            cached = json.loads(cache.read_text())
+            # If we have a CIK, check if a newer filing exists
+            if cik and cached.get("last_accession"):
+                latest_acc = await _check_latest_accession(session, cik)
+                if latest_acc and latest_acc != cached.get("last_accession"):
+                    logger.info("New filing detected for %s (accession %s → %s), invalidating cache",
+                                ticker, cached.get("last_accession"), latest_acc)
+                else:
+                    logger.info("EDGAR cache hit for %s (accession unchanged)", ticker)
+                    return cached
+            else:
+                logger.info("EDGAR cache hit for %s", ticker)
+                return cached
+
         if cik is None:
             logger.error("No CIK found for ticker %s", ticker)
-            return {"ticker": ticker, "cik": None, "metrics": {}, "quarters": 0}
+            return {"ticker": ticker, "cik": None, "metrics": {}, "quarters": 0,
+                    "edgar_lag_days": -1, "last_accession": None, "last_fetch_ts": time.time()}
 
-        # 3. Fetch company facts
+        # 3. Get latest accession number for cache metadata
+        latest_accession = await _check_latest_accession(session, cik)
+
+        # 4. Fetch company facts
         url = COMPANY_FACTS_URL.format(cik=cik)
         facts = await _fetch_json(session, url)
         if facts is None:
             logger.info("EDGAR unreachable for %s — generating sample data", ticker)
             result = _generate_sample_data(ticker, cik)
+            result["edgar_lag_days"] = 0
+            result["last_accession"] = latest_accession
+            result["last_fetch_ts"] = time.time()
             cache.write_text(json.dumps(result, default=str))
             return result
 
-        # 4. Extract metrics
+        # 5. Extract metrics
         metrics = _build_metric_series(facts)
 
         # Count unique quarter-end dates across all metrics
@@ -425,14 +483,20 @@ class EdgarClient:
             for pt in series:
                 all_ends.add(pt["end"])
 
+        lag_days = _compute_lag_days(metrics)
+
         result = {
             "ticker": ticker,
             "cik": cik,
             "metrics": metrics,
             "quarters": len(all_ends),
+            "edgar_lag_days": lag_days,
+            "last_accession": latest_accession,
+            "last_fetch_ts": time.time(),
         }
 
-        # 5. Cache
+        # 6. Cache
         cache.write_text(json.dumps(result, default=str))
-        logger.info("Fetched & cached EDGAR data for %s (%d quarters)", ticker, len(all_ends))
+        logger.info("Fetched & cached EDGAR data for %s (%d quarters, lag %d days)",
+                     ticker, len(all_ends), lag_days)
         return result

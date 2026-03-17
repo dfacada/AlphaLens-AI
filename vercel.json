@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python"
+    },
+    {
+      "src": "dashboard/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    { "src": "/health", "dest": "/api/index.py" },
+    { "src": "/ticker/(.*)", "dest": "/api/index.py" },
+    { "src": "/scan/(.*)", "dest": "/api/index.py" },
+    { "src": "/sources", "dest": "/api/index.py" },
+    { "src": "/(.*\\.html)$", "dest": "/dashboard/$1" },
+    { "src": "/(.*\\.css)$", "dest": "/dashboard/$1" },
+    { "src": "/(.*\\.js)$", "dest": "/dashboard/$1" },
+    { "src": "^/$", "dest": "/dashboard/index.html" }
+  ]
+}
