@@ -544,15 +544,18 @@ function DetailPanel({ stock, onClose }) {
         <div className="weights-explainer">
           <div style={{fontWeight:600,marginBottom:10,fontSize:11,color:"var(--text-dim)",textTransform:"uppercase",letterSpacing:"0.5px"}}>Scoring Weights Explanation</div>
           {[
-            {label:"Growth Quality",   text:"Measures revenue and earnings growth consistency over time — are sales actually accelerating?"},
-            {label:"Profitability",     text:"Measures margins (gross, operating, net) and return on capital — is the business efficiently making money?"},
-            {label:"Balance Sheet",     text:"Measures debt load, current ratio, and financial stability — can the company survive a downturn?"},
-            {label:"FCF Quality",       text:"Measures free cash flow relative to earnings — is the profit real cash or just accounting?"},
-            {label:"Momentum",          text:"Measures price trend strength relative to the market — is the stock actually moving in the right direction?"},
-            {label:"Market Signals",    text:"Measures analyst sentiment, institutional activity, and short interest — what is the smart money doing?"},
-          ].map(({label, text}) => (
+            {label:"Growth Quality", weight:"28%", text:"Pulls the last 8 quarters of revenue and net income from SEC filings. Calculates annualized revenue CAGR, growth consistency (low variance = higher score), and net income growth. Growing 15%+ annualized with low volatility scores in the 80s. Flat or declining revenue scores in the 30s."},
+            {label:"Profitability",  weight:"22%", text:"Takes the most recent quarter and calculates gross margin (gross profit / revenue), operating margin (operating income / revenue), and return on invested capital (operating income / total assets). A software company with 70% gross margins scores 90+. A retailer at 25% gross margin scores much lower."},
+            {label:"Balance Sheet",  weight:"15%", text:"Measures net debt relative to revenue (lower is better), interest coverage ratio (operating income / interest expense — higher means the company can easily service its debt), and cash as a % of total assets. Heavy leverage with thin coverage scores low."},
+            {label:"FCF Quality",    weight:"20%", text:"Compares free cash flow (operating cash flow minus capex) to net income. The key question: does reported profit show up as real cash? FCF consistently above net income scores 80+. A gap where earnings are high but cash generation is weak gets penalized — that often signals accounting-driven earnings."},
+            {label:"Momentum",       weight:"8%",  text:"Uses Polygon.io market data. Measures how far the current price is above or below the 50-day and 200-day moving averages, plus RSI-14. Price above both MAs with RSI in the 55–65 range scores well. Below both MAs with RSI under 40 scores in the 20s."},
+            {label:"Market Signals", weight:"7%",  text:"Binary signals from Polygon.io: options flow (bullish/neutral/bearish) and insider activity (net buying/neutral/net selling). Bullish options + insider buying ≈ 82. Neutral both = 50. Bearish + selling ≈ 20. Lowest weight by design — these signals are noisy."},
+          ].map(({label, weight, text}) => (
             <div className="weight-row" key={label}>
-              <span className="weight-label">{label}</span>
+              <div style={{flexShrink:0,width:112}}>
+                <div style={{fontWeight:600,color:"var(--text)",fontSize:11}}>{label}</div>
+                <div style={{color:"var(--accent)",fontSize:10,marginTop:1}}>{weight} of score</div>
+              </div>
               <span>{text}</span>
             </div>
           ))}
